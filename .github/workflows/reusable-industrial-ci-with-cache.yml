@@ -45,11 +45,17 @@ on:
         default: ".work"
         required: false
         type: string
+      continue_on_error:
+        description: 'Whether job failure should be treated as workflow success. Useful for tracking-only jobs (e.g. Rolling on main apt during a base-OS transition).'
+        default: false
+        required: false
+        type: boolean
 
 jobs:
   reusable_industrial_ci_with_cache:
     name: ${{ inputs.ros_distro }} ${{ inputs.ros_repo }} ${{ inputs.os_code_name }}
     runs-on: ubuntu-22.04
+    continue-on-error: ${{ inputs.continue_on_error }}
     env:
       CCACHE_DIR: ${{ github.workspace }}/${{ inputs.ccache_dir }}
       BASEDIR: ${{ github.workspace }}/${{ inputs.basedir }}

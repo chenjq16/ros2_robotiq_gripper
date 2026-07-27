@@ -11,6 +11,20 @@ jobs:
   coverage:
     name: coverage build
     runs-on: ubuntu-24.04
+    # Non-blocking while Rolling completes its Noble → Resolute base-OS transition.
+    #
+    # Observed 2026-07 on Ubuntu 24.04 (noble) runners: rosdep can't resolve
+    # Rolling's ros2_control dep chain for noble, so `apt-get install` skips
+    # runtime deps and the subsequent `colcon build` fails at
+    # `find_package(controller_interface REQUIRED)`. Upstream root cause: Rolling
+    # has migrated to Resolute and its dep chain no longer resolves against
+    # noble apt. Not fixable at the workflow level here (unlike industrial_ci
+    # jobs, this one runs ros-tooling/action-ros-ci directly on the runner).
+    #
+    # Revisit when either (a) `ros-tooling/action-ros-ci` releases a version that
+    # switches its runner base to Resolute, or (b) we wrap this workflow in
+    # `industrial_ci` with `OS_CODE_NAME: resolute` (matching moveit2's approach).
+    continue-on-error: true
     strategy:
       fail-fast: false
     env:
