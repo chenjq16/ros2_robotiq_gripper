@@ -83,7 +83,12 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(cons
 
   // Read parameters.
   gripper_closed_pos_ = stod(info_.hardware_parameters["gripper_closed_position"]);
-
+  gripper_max_speed_ = info_.hardware_parameters.count("gripper_max_speed") ?
+                           stod(info_.hardware_parameters["gripper_max_speed"]) :
+                           kGripperMaxSpeed;
+  gripper_max_force_ = info_.hardware_parameters.count("gripper_max_force") ?
+                           stod(info_.hardware_parameters["gripper_max_force"]) :
+                           kGripperMaxforce;
   gripper_position_ = std::numeric_limits<double>::quiet_NaN();
   gripper_velocity_ = std::numeric_limits<double>::quiet_NaN();
   gripper_position_command_ = std::numeric_limits<double>::quiet_NaN();
@@ -92,17 +97,15 @@ hardware_interface::CallbackReturn RobotiqGripperHardwareInterface::on_init(cons
 
   const hardware_interface::ComponentInfo& joint = info_.joints[0];
 
-  // There is one command interface: position.
-  if (joint.command_interfaces.size() != 1)
+  // There are three command interfaces:
+  // - position
+  // - max velocity
+  // - max effort
+  auto it = std::find_if(joint.command_interfaces.begin(), joint.command_interfaces.end(),
+                         [](const auto& cmd_itf) { return cmd_itf.name == hardware_interface::HW_IF_POSITION; });
+  if (it == joint.command_interfaces.end())
   {
-    RCLCPP_FATAL(kLogger, "Joint '%s' has %zu command interfaces found. 1 expected.", joint.name.c_str(),
-                 joint.command_interfaces.size());
-    return CallbackReturn::ERROR;
-  }
-
-  if (joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
-  {
-    RCLCPP_FATAL(kLogger, "Joint '%s' has %s command interfaces found. '%s' expected.", joint.name.c_str(),
+    RCLCPP_FATAL(kLogger, "Joint '%s' has does not have expected '%s' interface.", joint.name.c_str(),
                  joint.command_interfaces[0].name.c_str(), hardware_interface::HW_IF_POSITION);
     return CallbackReturn::ERROR;
   }
@@ -192,15 +195,15 @@ std::vector<hardware_interface::CommandInterface> RobotiqGripperHardwareInterfac
 
   command_interfaces.emplace_back(
       hardware_interface::CommandInterface(info_.joints[0].name, "set_gripper_max_velocity", &gripper_speed_));
-  gripper_speed_ = info_.hardware_parameters.count("gripper_speed_multiplier") ?
-                       info_.hardware_parameters.count("gripper_speed_multiplier") :
-                       1.0;
+  gripper_speed_ = kGripperMaxSpeed * (info_.hardware_parameters.count("gripper_speed_multiplier") ?
+                                           std::stod(info_.hardware_parameters.at("gripper_speed_multiplier")) :
+                                           1.0);
 
   command_interfaces.emplace_back(
       hardware_interface::CommandInterface(info_.joints[0].name, "set_gripper_max_effort", &gripper_force_));
-  gripper_force_ = info_.hardware_parameters.count("gripper_force_multiplier") ?
-                       info_.hardware_parameters.count("gripper_force_multiplier") :
-                       1.0;
+  gripper_force_ = kGripperMaxforce * (info_.hardware_parameters.count("gripper_force_multiplier") ?
+                                           std::stod(info_.hardware_parameters.at("gripper_force_multiplier")) :
+                                           1.0);
 
   command_interfaces.emplace_back(
       hardware_interface::CommandInterface("reactivate_gripper", "reactivate_gripper_cmd", &reactivate_gripper_cmd_));
@@ -294,10 +297,10 @@ hardware_interface::return_type RobotiqGripperHardwareInterface::write(const rcl
   double gripper_pos = (gripper_position_command_ / gripper_closed_pos_) * kGripperRange + kGripperMinPos;
   gripper_pos = std::max(std::min(gripper_pos, 255.0), 0.0);
   write_command_.store(uint8_t(gripper_pos));
-  gripper_speed_ = kGripperMaxSpeed * std::clamp(fabs(gripper_speed_) / kGripperMaxSpeed, 0.0, 1.0);
-  write_speed_.store(uint8_t(gripper_speed_ * 0xFF));
-  gripper_force_ = kGripperMaxforce * std::clamp(fabs(gripper_force_) / kGripperMaxforce, 0.0, 1.0);
-  write_force_.store(uint8_t(gripper_force_ * 0xFF));
+  const auto gripper_speed_multiplier = std::clamp(fabs(gripper_speed_) / gripper_max_speed_, 0.0, 1.0);
+  write_speed_.store(uint8_t(gripper_speed_multiplier * 0xFF));
+  const auto gripper_force_multiplier = std::clamp(fabs(gripper_force_) / gripper_max_force_, 0.0, 1.0);
+  write_force_.store(uint8_t(gripper_force_multiplier * 0xFF));
 
   return hardware_interface::return_type::OK;
 }
